@@ -1,1 +1,0 @@
-<licor><li7700><cfg><heater><top><control>on</control><deltat>2.0</deltat><heaterpower>30</heaterpower><ontime>00:00</ontime><offtime>23:59</offtime></top><bottom><control>on</control><signalstrengthlevel>2.0</signalstrengthlevel><heaterpower>100</heaterpower><ontime>00:00</ontime><offtime>23:59</offtime></bottom></heater></cfg></li7700></licor>
