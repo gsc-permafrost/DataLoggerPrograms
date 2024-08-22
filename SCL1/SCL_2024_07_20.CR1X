@@ -1,0 +1,559 @@
+' Swiss Cheese Lake EC Station Code
+' Dr. June Skeeter
+' 2024/07/07
+
+PipeLineMode
+
+'##METADATA
+Dim Lat = 69.226416
+Dim Lon = 135.251906
+Dim Zm = 3.285
+Dim Zm_adj
+Dim Bearing = 33
+Units Lat = Deg
+Units Lon = Deg
+Units Zm = m
+Units Zm_adj = m
+Units Bearing = Deg
+
+Dim PLS_Depth = 0.25
+Units PLS_Depth = m
+
+Dim LI7700_sep(3) = {0.23,0.13,0.04} 'u(SW),v(SE),w(up)
+Alias LI7700_sep(1) = LI7700_u
+Alias LI7700_sep(2) = LI7700_v
+Alias LI7700_sep(3) = LI7700_w
+Units LI7700_u = m
+Units LI7700_v = m
+Units LI7700_w = m
+
+Dim LI7500_sep(3) = {0.15,-0.06,0} 'u(SW),v(NW),w(up)
+Alias LI7500_sep(1) = LI7500_u
+Alias LI7500_sep(2) = LI7500_v
+Alias LI7500_sep(3) = LI7500_w
+Units LI7500_u = m
+Units LI7500_v = m
+Units LI7500_w = m
+
+'## Wiring ##
+' 1H - [red] - Current
+' 1L - [black] - Current
+' 2H - [red] - Voltage
+' 2L - [black] - Voltage
+' 3H - [white] - NRLite
+' 3L - [green; black - jumper] - NRLite
+' G - [brown; black - jumper] - NRLite
+' 4H - [red] - LI200x
+' 4L - [black] - LI200x
+' G - [white; clear] - LI200x
+' 5H - [yellow] - HMP
+' 5L - [blue] - HMP
+' G -[clear; black; white] - HMP
+' 6H - [blue] - TWGS_1 (R5)
+' 6L - [red] - TWGS_1
+' 7H - [blue] - TWGS_2 (R10)
+' 7L - [red] - TWGS_2
+' 8H - [blue] - TWGS_3 (R30)
+' 8L - [red] - TWGS_3
+
+' 12V [red] - HMP; [red] - BaroVue; [red] - PLS
+
+' G - [black,white] - LI7500; [black,clear] CSAT3
+' C1 - [grey] - LI7500; [green] - CSAT3; [blue] - SDM
+' C2 - [blue] - LI7500; [white] - CSAT3; [brown] - SDM
+' C3 - [brown] - LI7500; [brown] - CSAT3; [purple] - SDM
+
+' C5 - [grey] - PLS;
+' C7 - [white] - BaroVue
+' G - [blue; clear] - PLS; [black] - BaroVue
+
+
+' ###### Remember to reset Voltage Settings
+
+Const scan_interval = 50 'mSec
+Const slow_scan_interval = 5 ' Sec
+Dim SlowCount
+Const L7700_interval = 25 'Output interval for LI7700 is 25 mSec (40Hz)
+Const LI7700MaxScanReturns = scan_interval/L7700_interval+1 'So depending on how the clocks match up, we could see up to this many returns per scan 
+
+Public PowerOff(4) = {12.0, 12.02, 12.05, 12.1} ' Minimum Voltage thershold to initate shutdown sequence of high frequency sensors
+Public PowerOn = 12.5 ' Average 24h voltage threshold to initate restart (if shutdown) 
+
+' ######## PowerRelay ########
+Public PowerControl(16) As Boolean = True
+Public EthernetPowerSetting As Boolean = True ' Don't turn on until after 7700 has powered up
+Public ConnectionReset(2) ' Flags to determine if EthernetPower should bye cycled
+Const TCPResetDelay = 10 ' Fast scans without data to wait before TCPClose
+Const EthernetResetDelay = TCPResetDelay*2' Fast scans without data to wait before Cycling Ethernet Power
+Public Success_Count
+
+Public BattV 'From Logger
+Public Voltage 'From Battery Bank
+Public Current 'Incoming/Outgoing power
+'For power control
+Public Power_Tracking(6)
+Alias Power_Tracking(1) = VoltAvg
+Alias Power_Tracking(2) = VoltMin
+Alias Power_Tracking(3) = VoltMax
+Alias Power_Tracking(4) = AmpAvg
+Alias Power_Tracking(5) = AmpMin
+Alias Power_Tracking(6) = AmpMax
+
+Units BattV=Volts
+Units Current = amps
+Units Voltage=Volts
+
+' ######## CSAT3 ########
+' 2 scan delay so store 3 scans in total
+Const CSAT_delay = 2 + 1
+Const CSAT_dim = 5
+Public CSAT(CSAT_dim)
+Alias CSAT(1) = Ux
+Alias CSAT(2) = Uy
+Alias CSAT(3) = Uz
+Alias CSAT(4) = Ts
+Alias CSAT(5) = Diagnostic_CSAT
+Units CSAT = m/s
+Units Ts = C
+Units Diagnostic_CSAT = arb
+
+' ######## LI7500 ########
+' 200 mSec delay from LI7500 for current scan + 1 for current scan
+Const LI7500_delay As Long = 200/scan_interval + 1
+Const LI7500_dim = 4
+Public LI7500(LI7500_dim)
+Public LI7550_SignalStrength
+Alias LI7500(1) = CO2
+Alias LI7500(2) = H2O
+Alias LI7500(3) = press
+Alias LI7500(4) = LI7500_diag
+Units CO2 = mg/mol
+Units H2O = g/mol
+Units press = kPa
+Units LI7500_diag = arb
+
+' ######## LI7700 ########
+' Ethernet connection requires some more complex procedures
+Const LI7700_IP = "169.254.67.86"
+Public ProcID = 0 'ID number of subprocess that read LI7700
+Const OverSampleRate = scan_interval/L7700_interval ' number of returns expected/scan
+Const OverSampleBuffer = OverSampleRate*3 ' * 3 for buffer
+Const Buffer_Size = 537
+Const NBE = 237
+Public tcpip_socket_status As Long
+Public socket As Long
+Public NBR As Long
+Public ConnectStep As Long = 1
+
+' Power settings
+Public HeatingControl As Long 1
+Public HeaterOff As String = "off"
+Public HeaterPower As String * 3
+Public HeaterPowerDefault As String = "30"
+Public HeaterPowerHigh As String = "100"
+Public HeaterSet As String * 500
+Public RH_Heat_Thresh = 90
+
+' Incoming data read as string of (NBE) bytes
+Public LI7700_string As String * NBE
+Const LI7700_delay = 0
+Const LI7700_dim = 9
+Dim LI7700_Over_Sampled(OverSampleBuffer,LI7700_dim) As Double
+Public LI7700(LI7700_dim) As Double
+' First three records are timestamps
+' Next six are important HF variables
+' 22 in total Remaining 13? Add later
+Alias LI7700(1) = milliseconds
+Alias LI7700(2) = seconds
+Alias LI7700(3) = nanoseconds
+Alias LI7700(4) = Diagnostic_7700
+Alias LI7700(5) = CH4_density
+Alias LI7700(6) = CH4_mole_fraction
+Alias LI7700(7) = Temperature
+Alias LI7700(8) = Pressure
+Alias LI7700(9) = RSSI
+
+Units milliseconds = milliseconds
+Units seconds = seconds
+Units nanoseconds = nanoseconds
+Units Diagnostic_7700 = arb
+Units CH4_density = mmol/m^3
+Units CH4_mole_fraction = umol/mol
+Units Temperature = C
+Units Pressure = kPa
+Units RSSI = %
+
+' ######## MetSensors ########
+Public AirTC
+Public RH
+Public NetRad
+Public NetRad_Corrected
+Public SlrW
+Public WindSpeed
+Public WindDirection
+Public BaroVUE(3)
+Public PLS_Results(2)
+Public Trigger_Measurement As Boolean = True
+Public PTemp_C
+Public TWGS_1
+Public TWGS_2
+Public TWGS_3
+
+Alias BaroVUE(1)=BV_BP
+Alias BaroVUE(2)=BV_Temp
+Alias BaroVUE(3)=BV_Qual
+Alias PLS_Results(1) = Water_Level_m
+Alias PLS_Results(2) = Water_Temp_C
+
+Units AirTC=deg C
+Units RH=%
+Units NetRad=w/m^2
+Units SlrW=w/m^2
+Units WindSpeed=m/s
+Units WindDirection=deg
+Units BV_BP=hPa
+Units BV_Temp=deg C
+Units BV_Qual=arb
+Units Water_Level_m = m
+Units Water_Temp_C = deg C
+Units PTemp_C = deg C
+Units TWGS_1 = deg C
+Units TWGS_2 = deg C
+Units TWGS_3 = deg C
+
+
+' ######## Sensor Delays ########
+'Const MaxDelay As Long = 1e3/scan_interval ' Maxium Possible Delay is total scans in one second
+Const MaxDelay = 6 ' Maxium Possible Delay (smaller for testing)
+Const MaxDim = LI7700_dim ' Maximum number of input records (determined from LI7700)
+Const HF_Sensors = 3 ' Total Number of high frequency sensors
+Dim AllDelays(HF_Sensors) = {CSAT_delay,LI7500_delay,LI7700_delay}
+Dim ix_CSAT=1,ix_LI7500=2,ix_LI7700=3
+Public DelayOffsets(HF_Sensors)
+Dim HF_pipeline(HF_Sensors,MaxDelay,MaxDim) As Double
+
+DataTable(MetaData,True,-1)
+  DataInterval(0,24,Hr,10)
+  TableFile("CRD:MetaData",64,-1,0,24,Hr,0,0)
+  Sample (1,Lat,IEEE4)
+  Sample (1,Lon,IEEE4)
+  Sample (1,Zm,IEEE4)
+  Average (1,Zm_adj,IEEE4,False)
+  Sample (3,LI7700_u,FP2)
+  Sample (3,LI7500_u,FP2)
+  Sample (1,Bearing,FP2)
+  Sample (6,VoltAvg,IEEE4)
+  Minimum (1,BattV,IEEE4,False,False)
+EndTable
+
+DataTable(Met_Data,True,-1)
+  DataInterval(0,30,Min,10)
+  TableFile("CRD:Met_Data",64,-1,0,24,Hr,0,0)
+	Average (1,Current,IEEE4,False)
+	Average(1,BattV,IEEE4,False)
+	Average(1,Voltage,IEEE4,False)
+	Average(1,NetRad,IEEE4,False)
+	Average(1,NetRad_Corrected,IEEE4,False)
+	Average(1,SlrW,IEEE4,False)	
+	Average(1,AirTC,IEEE4,False)
+	Sample(1,RH,IEEE4)
+	Average(3,BV_BP,IEEE4,False)
+  Sample(2,Water_Level_m,FP2)
+  Average (1,PTemp_C,IEEE4,False)
+  Average (1,TWGS_1,IEEE4,False)
+  Average (1,TWGS_2,IEEE4,False)
+  Average (1,TWGS_3,IEEE4,False)
+EndTable
+
+DataTable (Flux_Data,TRUE,-1)
+  DataInterval (0,0,mSec,10)
+  TableFile("CRD:Flux_Data",64,-1,0,30,Min,0,0)
+  Sample (5,Ux,IEEE4)
+  Sample (4,CO2,IEEE4)
+  Sample (1,LI7550_SignalStrength,IEEE4)
+  Sample (2,seconds,IEEE8)
+  Sample (6,Diagnostic_7700,IEEE4)
+EndTable
+
+Sub LI7500_Diagnostic_Dump
+  Dim BinaryString As String * 8
+  Dim BitMap As String * 8
+  Dim TempValue
+  Dim Remainder
+  Dim Cast
+  Dim m
+  Dim n
+  BinaryString = ""
+  TempValue = LI7500_diag
+  For m = 0 To 7
+    Remainder = TempValue MOD 2
+    BinaryString = CHR(Remainder + 48) + BinaryString
+    TempValue = TempValue \ 2
+  Next m
+  BitMap = BinaryString
+  BinaryString =  Mid(BitMap,5,4)
+  LI7550_SignalStrength = 0
+  For n = 0 To 3
+    Cast = Mid(BinaryString,n+1,1)
+    LI7550_SignalStrength += Cast*2^(3-n)
+  Next n
+  LI7550_SignalStrength = LI7550_SignalStrength* 6.25
+EndSub
+
+Sub LI7700Heating
+  Dim RollRH
+  Dim RollAirTC
+  Dim Update = False
+  Const cfgHeat_a As String = "<licor><li7700><cfg><heater><top><control>"
+  Const cfgHeat_b As String = "</control><deltat>2.0</deltat><heaterpower>"
+  Const cfgHeat_c As String = "</heaterpower><ontime>00:00</ontime><offtime>23:59</offtime></top><bottom><control>"
+  Const cfgHeat_d As String = "</control><signalstrengthlevel>2.0</signalstrengthlevel><heaterpower>"
+  Const cfgHeat_e As String = "</heaterpower><ontime>00:00</ontime><offtime>23:59</offtime></bottom></heater></cfg></li7700></licor>"
+
+  MaxRun(RollRH,1,RH,900/slow_scan_interval)
+  AvgRun(RollAirTC,1,AirTC,900/slow_scan_interval)
+  
+  If TimeIntoInterval (14,15,Min) Then
+    If RollRH > RH_Heat_Thresh AND RollAirTC > 1 AND VoltMin > PowerOff(4) Then
+      If HeatingControl <> 2 Then
+        HeatingControl = 2
+        Update = True
+      EndIf
+    ElseIf RollRH > RH_Heat_Thresh AND RollAirTC < 1 AND VoltMin > PowerOff(4) Then
+      If HeatingControl <> 3 Then
+        HeatingControl = 3
+        Update = True
+      EndIf
+    ElseIf HeatingControl <> 1 Then
+      HeatingControl = 1
+      Update = True
+    EndIf
+    If Update = True Then
+      If HeatingControl = 1 Then 
+  		  HeaterOff = "off"
+  		Else
+  		  HeaterOff = "on"
+  		EndIf
+  		If HeatingControl = 2 Then 
+  		  HeaterPower = HeaterPowerDefault
+  		ElseIf HeatingControl = 3 Then 
+  		  HeaterPower = HeaterPowerHigh
+  		EndIf
+  		HeaterSet = cfgHeat_a & HeaterOff & cfgHeat_b & HeaterPower & cfgHeat_c & HeaterOff & cfgHeat_d & HeaterPower & cfgHeat_e & CHR(10)
+      SerialOutBlock (socket,HeaterSet,61)
+    EndIf
+  EndIf 
+EndSub
+
+Sub LI7700Connnect
+  If ConnectStep = 1 Then
+    '  Dim Sout = "<licor><li7700><output><rate>0</rate></output><cfg><clock><date>2023-07-10</date><time>14:00:00</time><ptp>preferred</ptp></clock></cfg></li7700></licor>"
+      tcpip_socket_status = SerialInChk (socket)
+      If EthernetPowerSetting = True  AND tcpip_socket_status = -1 Then
+        socket = TCPOpen (LI7700_IP,7700,Buffer_Size,400)
+        ConnectStep = 2
+      ElseIf EthernetPowerSetting = False AND tcpip_socket_status > -1 Then
+        TCPClose(socket)
+      ElseIf ConnectionReset(1) = 0 AND EthernetPowerSetting = True Then
+        TCPClose(socket)
+      EndIf
+    'Call LI7700Heating
+  ElseIf ConnectStep = 2
+    SerialOutBlock (socket,"<licor><li7700><output><rate>0</rate></output></li7700></licor>"+CHR(10),61)
+    ConnectStep = 3
+  Else
+    SerialOutBlock (socket,"<licor><li7700><cfg><clock><date>2023-07-10</date><time>14:00:00</time><zone></zone>ETC/GMT<ptp>preferred</ptp></clock></cfg></li7700></licor>"+CHR(10),61)
+    ConnectStep = 1
+  EndIf
+    
+EndSub
+
+Sub ReadLI7700 '(nAttempts)
+  ProcID += 1
+  Timer (2,msec,2) 
+  Dim fastCount = 0
+  NBR = 0
+  Dim sub_Timer = 0
+  Success_Count = 1
+  Dim TempString As String * NBE
+  Dim w
+  Dim x
+  Dim y
+  Dim z
+  Dim ValuesToAverage(OverSampleRate)
+  Dim TheAverage
+  Dim Secs As Double
+  Dim nSecs As Double
+  If PowerControl(3) = True Then
+    SerialOutBlock (socket,"<licor><li7700><cmd><poll>true</poll></cmd></li7700></licor>"+CHR(10),61)
+    Do 
+      SerialInRecord (socket,LI7700_string,&h44,0,&h0A,NBR,01)
+      fastCount += 1
+      sub_Timer = Timer (2,msec,4)
+      If NBR <> 0 AND LI7700_string <> TempString Then
+        TempString = LI7700_string
+        For w = 1 To OverSampleBuffer-1
+          Move(LI7700_Over_Sampled(w+1,1),LI7700_dim,LI7700_Over_Sampled(w,1),LI7700_dim)
+        Next w
+        SplitStr (LI7700_Over_Sampled(1,1),LI7700_string,CHR(09),LI7700_dim,4)
+        Success_Count += 1
+        If sub_Timer + L7700_interval/2 < scan_interval Then
+          Delay(1,L7700_interval/2,mSec)
+          SerialOutBlock (socket,"<licor><li7700><cmd><poll>true</poll></cmd></li7700></licor>"+CHR(10),61)
+        Else
+          ExitDo
+        EndIf
+      End If
+    Loop Until sub_Timer > scan_interval OR Success_Count > OverSampleRate
+    For y = 1 To LI7700_dim
+      Move(ValuesToAverage,OverSampleRate,0,OverSampleRate)
+      For x = 1 To OverSampleRate
+        Move(ValuesToAverage(x),1,LI7700_Over_Sampled(OverSampleBuffer-x+1,y),1)
+      Next x
+      AvgSpa(TheAverage,OverSampleRate,ValuesToAverage(1))
+      Move(LI7700(y),1,TheAverage,1)
+    Next y
+    For z = 1 To OverSampleRate
+      Move(LI7700_Over_Sampled(OverSampleBuffer-z+1,1),LI7700_dim,NaN,LI7700_dim)
+    Next z
+    'Poll the LI7700 to get the timestamp
+    Secs = LI7700(2)
+    nSecs = LI7700(3)*1e-9
+    sub_Timer = Timer (2,msec,4)
+  Else
+    NBR = -1
+  EndIf
+  
+  MaxRun(ConnectionReset(1),1,NBR,TCPResetDelay)
+  MaxRun(ConnectionReset(2),1,NBR,EthernetResetDelay)
+EndSub  
+
+Sub PieplineDelay
+  Dim i As Long
+  Dim j As Long
+  Dim k As Long
+  DelayOffsets() = MaxDelay-AllDelays()
+  ' Do CSAT First
+  Move(HF_pipeline(ix_CSAT,DelayOffsets(ix_CSAT),1),CSAT_dim,CSAT(1),CSAT_dim)
+  For i = 1 To DelayOffsets(ix_CSAT)-1
+    Move(HF_pipeline(ix_CSAT,i,1),CSAT_dim,HF_pipeline(ix_CSAT,i+1,1),CSAT_dim)
+  Next i
+  Move(CSAT(1),CSAT_dim,HF_pipeline(ix_CSAT,1,1),CSAT_dim)
+  ' Then LI7500
+  Move(HF_pipeline(ix_LI7500,DelayOffsets(ix_LI7500),1),LI7500_dim,LI7500(1),LI7500_dim)
+  For j = 1 To DelayOffsets(ix_LI7500)-1
+    Move(HF_pipeline(ix_LI7500,j,1),LI7500_dim,HF_pipeline(ix_LI7500,j+1,1),LI7500_dim)
+  Next i
+  Move(LI7500(1),LI7500_dim,HF_pipeline(ix_LI7500,1,1),LI7500_dim)
+  ' Then LI7700
+  Move(HF_pipeline(ix_LI7700,DelayOffsets(ix_LI7700),1),LI7700_dim,LI7700(1),LI7700_dim)
+  For k = 1 To DelayOffsets(ix_LI7700)-1
+    Move(HF_pipeline(ix_LI7700,k,1),LI7700_dim,HF_pipeline(ix_LI7700,k+1,1),LI7700_dim)
+  Next k
+  Move(LI7700(1),LI7700_dim,HF_pipeline(ix_LI7700,1,1),LI7700_dim)
+EndSub
+
+Sub ManagePower  
+  Dim SubTimer
+  AvgRun(VoltAvg,1,Voltage,86400/slow_scan_interval)
+  MinRun(VoltMin,1,Voltage,86400/slow_scan_interval)
+  MaxRun(VoltMax,1,Voltage,86400/slow_scan_interval)
+  
+  AvgRun(AmpAvg,1,Current,86400/slow_scan_interval)
+  MinRun(AmpMin,1,Current,86400/slow_scan_interval)
+  MaxRun(AmpMax,1,Current,86400/slow_scan_interval) 
+  AmpAvg = AmpAvg * 24
+  SubTimer = Timer(1,sec,4)
+  If Power_Tracking(2) < PowerOff(3) AND Power_Tracking(1) < PowerOn Then
+    Move(PowerControl(3),1,False,1)
+    If Power_Tracking(2) < PowerOff(2) Then Move(PowerControl(2),1,False,1)
+    If Power_Tracking(2) < PowerOff(1) Then Move(PowerControl(1),1,False,1)
+    EthernetPowerSetting = False
+  ElseIf Power_Tracking(1) > PowerOn AND PowerControl(3) = False Then
+    Move(PowerControl,3,True,1)
+    Timer(1,sec,2)
+  ElseIf ConnectionReset(2) = 0 AND EthernetPowerSetting = False Then
+    EthernetPowerSetting = True
+    NBR = -1
+  ElseIf ConnectionReset(2) = 0 AND EthernetPowerSetting = True AND SubTimer > EthernetResetDelay Then
+    EthernetPowerSetting = False
+  EndIf
+EndSub
+
+
+BeginProg
+  Timer(1,sec,0)
+  SDMSpeed (30)
+  Scan (scan_interval,mSec,300,0)
+    CSAT3(CSAT(1),1,3,91,20)
+    WindSpeed = (Ux^2+Uy^2)^0.5
+    CS7500(LI7500(1),1,7,6)
+    Call ReadLI7700
+    Call PieplineDelay
+    Call LI7500_Diagnostic_Dump     
+    CallTable Flux_Data
+  NextScan
+  
+  SlowSequence
+  Scan (slow_scan_interval,Sec,3,0)
+    
+    Battery(BattV)
+    VoltDiff (Current,1,Autorange,1,True ,0,250,1.0,0)
+    VoltDiff (Voltage,1,Autorange,2,True ,0,250,0.01536,0)
+    VoltDiff(NetRad,1,mv200,3,True,0,60,100,0)
+    VoltDiff(SlrW,1,mV200,4,True,0,60,1,0)
+    SDI12Recorder(BaroVUE(),C7,"0","M!",1,0,-1)
+    
+		'HMP155 (constant power) Temperature & Relative Humidity Sensor measurements 'AirTC' and 'RH'
+		VoltSe(AirTC,1,mV1000,9,False,0,60,0.14,-80)
+		VoltSe(RH,1,mV1000,10,False,0,60,0.1,0)
+		If RH>100 AND RH<108 Then RH=100
+    
+		If SlrW<0 Then SlrW=0
+		SlrW=SlrW*200
+		
+    If WindSpeed > 5 Then
+			NetRad_Corrected=NetRad*(1+0.021286*(WindSpeed-5))
+		Else
+			NetRad_Corrected=NetRad
+		EndIf
+		
+    If TimeIntoInterval (0,15,Min) OR Trigger_Measurement = True Then
+      SDI12Recorder(PLS_Results(),C5,"0","M!",1,0)
+      Water_Level_m = Water_Level_m - PLS_Depth
+      If Water_Level_m > 0 Then
+        If Water_Level_m < 0.25 Then
+          Zm_adj = Zm - Water_Level_m
+        Else 
+          Zm_adj = Zm - 0.25
+        EndIf
+      Else
+        Zm_adj = Zm
+      EndIf
+      Trigger_Measurement = False
+    EndIf
+    
+		'Default CR1000X Datalogger Wiring Panel Temperature measurement 'PTemp_C'
+		PanelTemp(PTemp_C,60)
+		'Type T Thermocouple measurements 'Temp_C'
+		TCDiff(TWGS_1,1,mv200C,6,TypeT,PTemp_C,True,0,60,1,0)
+    TCDiff(TWGS_2,1,mv200C,7,TypeT,PTemp_C,True,0,60,1,0)
+    TCDiff(TWGS_3,1,mv200C,8,TypeT,PTemp_C,True,0,60,1,0)
+     
+    If EthernetPowerSetting = True Then
+      Call LI7700Connnect
+    EndIf
+    Call ManagePower       
+    SDMCD16AC(PowerControl(),1,0)
+    EthernetPower(EthernetPowerSetting)   
+    If EthernetPowerSetting = True Then
+      Call LI7700Connnect
+    EndIf
+
+    CallTable Met_Data
+    CallTable MetaData
+    
+    SlowCount += 1
+    
+  NextScan
+EndProg
