@@ -1,0 +1,20 @@
+Final Storage Label File for:  OverWinter.SCW
+Date:  9/13/2024
+Time:  16:48:28
+
+101 Output_Table  30.00 Min
+1 101 L
+2 Year_RTM  L
+3 Day_RTM  L
+4 Hour_Minute_RTM  L
+5 BattV_AVG  L
+6 Current_AVG  L
+7 Voltage_AVG  L
+8 NR_Wm2_AVG  L
+9 SlrW_AVG  L
+10 AirTC_AVG  L
+11 RH  L
+12 Pressure_AVG  L
+13 ITemp_C_AVG  L
+
+Estimated final storage locations used per day:     624
