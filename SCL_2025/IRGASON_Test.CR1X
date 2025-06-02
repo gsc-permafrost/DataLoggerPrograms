@@ -1,0 +1,39 @@
+'CR1000X Series Datalogger
+Public sonic_irga(22)
+Alias sonic_irga(1) = Ux
+Alias sonic_irga(2) = Uy
+Alias sonic_irga(3) = Uz
+Alias sonic_irga(4) = Ts
+Alias sonic_irga(5) = diag_sonic
+Alias sonic_irga(6) = CO2
+Alias sonic_irga(7) = H2O
+Alias sonic_irga(8) = diag_irga
+Alias sonic_irga(9) = cell_tmpr
+Alias sonic_irga(10) = cell_press
+Alias sonic_irga(11) = CO2_sig_strgth
+Alias sonic_irga(12) = H2O_sig_strgth
+
+Units Ux = m/s
+Units Uy = m/s
+Units Uz = m/s
+Units Ts = C
+Units diag_sonic = arb
+Units CO2 = mg/m^3
+Units H2O = g/m^3
+Units diag_irga = arb
+Units cell_tmpr = C
+Units cell_press = kPa
+Units CO2_sig_strgth = arb
+Units H2O_sig_strgth = arb
+
+DataTable (ts_data,TRUE,-1)
+  DataInterval (0,0,mSec,10)
+  Sample (12,Ux,IEEE4)
+EndTable
+
+BeginProg
+  Scan (100,mSec,0,0)
+    EC100 (Ux,1,1)
+    CallTable ts_data
+  NextScan
+EndProg
