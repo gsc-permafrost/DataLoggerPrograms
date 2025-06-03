@@ -121,7 +121,7 @@ Const SWOUT_SNSTVT As Float    = 15.41       'Unique: NR01/CNR4 sensitivity of d
 Const LW_IN_SNSTVT As Float    = 8.50        'Unique: NR01/CNR4 sensitivity of upward facing pyrgeometer as reported on sensor calibration sheet (uV m2 W-1).
 Const LWOUT_SNSTVT As Float    = 7.09        'Unique: NR01/CNR4 sensitivity of downward facing pyrgeometer as reported on sensor calibration sheet (uV m2 W-1).
 #EndIf
-Const SENSOR_SN500 As Boolean  = FALSE       'Unique: SN500SS 4-way net radiometer. FALSE as default. If true, SENSOR_CNR4, _NR01, _CS301, _CS320, and _CS310 must be set to FALSE.
+Const SENSOR_SN500 As Boolean  = TRUE       'Unique: SN500SS 4-way net radiometer. FALSE as default. If true, SENSOR_CNR4, _NR01, _CS301, _CS320, and _CS310 must be set to FALSE.
 #If (SENSOR_SN500) Then 
 Const SN500SDI_ADR             = 3           'Unique: SDI address for SN500 (3 as default) 
 #EndIf

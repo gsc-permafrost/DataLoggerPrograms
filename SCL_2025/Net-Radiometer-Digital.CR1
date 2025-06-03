@@ -1,0 +1,52 @@
+'CR1000 Series Datalogger
+'Example datalogger program for Apogee Instruments SN-500 net radiometer
+'date: October 7, 2016
+'program author: Jacob Bingham
+
+'Explanation of Constants and Variables Used in Datalogger Program
+'BattV = datalogger battery voltage
+'PanelT = datalogger panel temperature
+'Net(4) = Array to hold output from SDI12Recorder function;
+'         Location 1 = incoming SW, Location 2 = outgoing SW,
+'         Location 3 = incoming LW, Location 4 = outgoing LW
+'Incoming_SW = downwelling shortwave radiation in Watts per square meter
+'Outgoing_SW = upwelling (reflected) shortwave radiation in Watts per square meter
+'Incoming_LW = downwelling longwave radiation in Watts per square meter
+'Incoming_LW = upwelling (emitted) longwave radiation in Watts per square meter
+
+'Declare Public Variables
+Public BattV, PanelT
+Public Net(4)
+
+'Rename Variables
+Alias Net(1) = Incoming_SW
+Alias Net(2) = Outgoing_SW
+Alias Net(3) = Incoming_LW
+Alias Net(4) = Outgoing_LW
+
+'Define Data Tables
+DataTable (Net_Rad,1,-1)
+	DataInterval (0,1,Min,10)
+	Minimum(1,BattV,IEEE4,0,False)
+	Sample(1,PanelT,IEEE4)
+	Average(1,Incoming_SW,IEEE4,False)
+  Average(1,Outgoing_SW,IEEE4,False)
+  Average(1,Incoming_LW,IEEE4,False)
+  Average(1,Outgoing_LW,IEEE4,False)
+EndTable
+
+'Main Program
+BeginProg
+  'The scan rate should not be less than 5 seconds, faster rates cause the data table to fail to populate.
+	Scan(5,Sec,0,0)
+		Battery(BattV)
+		PanelTemp(PanelT,_60Hz)
+		
+    'Measure Surface Temperature
+    SDI12Recorder (Net(),1,0,"MC!",1.0,0) 'refer to the owner's manual for a list of relevant commands
+
+    'Call Output Tables
+		CallTable Net_Rad
+	NextScan
+EndProg
+

@@ -35,5 +35,110 @@ BeginProg
   Scan (100,mSec,0,0)
     EC100 (Ux,1,1)
     CallTable ts_data
+
+    
+   If ( ga_77_scan_cntr > GA_77_SCAN_BUFF_SIZE ) Then
+   'Get LI-7700 science data.
+     SerialInRecord (ga_77_socket,ga_77_in_bytes_str,&h44,0,&h0A,ga_77_nmbr_bytes_rtrnd,11)
+     If ( ga_77_nmbr_bytes_rtrnd = 0 ) Then
+       ga_77_scan_cntr = 0                                'Restack the TCP/IP input buffer with GA_77_SCAN_BUFF_SIZE number of records.
+       ga_77_tcip_ip_socket_close_timer = Timer (0,Sec,0) 'Start timer after first NAN.
+
+       Move (ga_77(1),5,NAN,1)                            'No valid data available from LI-7700 output, set all science data to NAN 
+       bad_CH4_rcd = -1
+       Move (diag_bits_77(1),12,1,1)                      'No valid data available from LI-7700 output, set all diag_bits to 1
+     Else
+       ga_77_tcip_ip_socket_close_timer = Timer (0,Sec,3) 'Stop timer if LI-7700 is sending data.
+     
+       SplitStr (ga_77_tmp(1),ga_77_in_bytes_str,CHR(09),9,4)    'Parse out science data into a temporary variable.
+       ga_77_tmp(10) = Right (ga_77_in_bytes_str,3)
+       ga_77_checksum_f = (ga_77_tmp(10) EQV (CheckSum ("D"&ga_77_in_bytes_str,7,ga_77_nmbr_bytes_rtrnd-2)))
+
+       If ( ga_77_checksum_f ) Then                       'A successful checksum indicates valid data records
+         'According to LI-7700 manual, CH4D (CH4 number density) should be used for flux calculation. However, the order of parameters in LI-7700 output
+         'may vary among different versions of embedded software. Users should exam the LI-7700 output (when LI-7700 is connected to a datalogger through
+         'ethernet cable) and make sure the array (ga_77_temp) indices in the following lines correspond to the sequential order in LI-7700 output line.  
+         diag_77 = ga_77_tmp(4)                           'Diagnostic value from LI-7700 
+         CH4_77 = ga_77_tmp(6)                            'According to manual, CH4D (uncorrected CH4 density in mmol m-3) should be used in flux calculation 
+         amb_tmpr_77 = ga_77_tmp(7)                       'Temperature (Deg C) measured by the LI-7700 thermocouple 
+         amb_press_77 = ga_77_tmp(8)                      'Pressure (kPa) measured near the optical path of LI-7700 
+         rssi_77 = ga_77_tmp(9)                           'Signal strength (%) from LI-7700
+                   
+         diag_77_tmp = IIF (diag_77 <> NAN,diag_77,&hfffe)
+         diag_77_tmp = diag_77_tmp >> 4
+         diag_77_aggregate = diag_77_aggregate OR diag_77_tmp
+
+         'Extract the twelve flags from the gas analyzer diagnostic word.
+         For i = 1 To 12
+           diag_bits_77(i) = diag_77_tmp AND &h1
+           diag_77_tmp = diag_77_tmp >> 1
+         Next i
+
+         bad_CH4_rcd = 0
+         If ( (diag_77 = NAN) OR (ga_77_not_ready_f <> 0) OR (ga_77_no_signal_f <>0) ) Then    'To determine if a LI-7700 record is good or bad 
+           bad_CH4_rcd = -1
+         ElseIf ( (ga_77_ref_unlocked_f <> 0) OR (ga_77_lsr_tmpr_unreg_f <> 0) OR (ga_77_blk_tmpr_unreg_f <>0) ) Then 
+           bad_CH4_rcd = -1
+         ElseIf ( (ga_77_motor_spinning_f <> 0) OR (ga_77_pump_on_f <> 0) OR (ga_77_calibrating_f <>0) ) Then 
+           bad_CH4_rcd = -1         
+         ElseIf ( (CH4_77 = NAN) OR (CH4_77 > CH4_UPPER_BOUND) OR (CH4_77 < CH4_LOWER_BOUND) ) Then
+           bad_CH4_rcd = -1
+         ElseIf ( (amb_tmpr_77 = NAN) OR (amb_press_77 = NAN) ) Then
+           bad_CH4_rcd = -1
+         ElseIf ( (rssi_77 = NAN) OR (rssi_77 < RSSI_THRESHOLD) ) Then
+           bad_CH4_rcd = -1
+         Else
+           bad_CH4_rcd = 0
+         EndIf
+       Else                                              'A failure of checksum indicates invalid data records                                            
+         Move (ga_77(1),5,NAN,1)                         'After a failure of checksum, set all science data from LI-7700 output to NAN               
+         bad_CH4_rcd = -1
+         Move (diag_bits_77(1),12,1,1)                   'After a failure of checksum, set all diag_bits from LI-7700 output to 1
+       EndIf  ' ( ga_77_checksum_f )  
+     EndIf  ' ( ga_77_nmbr_bytes_rtrnd = 0 )
+
+     If ( NOT (ga_77_clear_buff_f) AND ( ga_77_in_bytes_str = "Y" ) ) Then ( ga_77_clear_buff_f = TRUE )
+     If ( ga_77_clear_buff_f AND ga_77_checksum_f ) Then  'Flush and restack the TCP/IP input buffer with GA_77_SCAN_BUFF_SIZE number of records after communication is established.
+       ga_77_clear_buff_f = FALSE
+       ga_77_scan_cntr = 0
+       ga_77_nmbr_bytes_rtrnd = 0
+       SerialFlush (ga_77_socket)
+     EndIf
+   Else
+     ga_77_scan_cntr += 1
+
+     Move (ga_77(1),5,NAN,1)                            'While TCP/IP input buffer is being filled or restacked, set all science data from LI-7700 to NAN 
+     bad_CH4_rcd = -1
+     Move (diag_bits_77(1),12,1,1)                      'While TCP/IP input buffer is being filled or restacked, set all diag_bits from LI-7700 to 1    
+   EndIf  '( ga_77_scan_cntr > GA_77_SCAN_BUFF_SIZE )
+
+   CallTable delay_ga_77   
   NextScan
+SlowSequence
+
+	Scan(5,Sec,0,0)
+		Battery(BattV)
+		PanelTemp(PanelT,_60Hz)
+		
+    'Measure Surface Temperature
+    SDI12Recorder (Net(),1,0,"MC!",1.0,0) 'refer to the owner's manual for a list of relevant commands
+
+    'Call Output Tables
+		CallTable Net_Rad
+	NextScan
+NextScan
+
+SlowSequence
+
+  Do
+    Delay (1,1,Sec)
+    ga_77_tcip_ip_socket_close_timer = Timer (0,Sec,4)
+    ga_77_socket = TCPOpen (LI7700_IP_ADDR_str,7700,GA_77_SERIAL_BUFF_SIZE)
+    If ( ga_77_tcip_ip_socket_close_timer > 80 ) Then 'The default timeout for the TCPOpen is 75 seconds. Close the socket if there's been no data for 80 seconds.
+      ga_77_tcip_ip_socket_close_timer = Timer (0,Sec,3)
+      TCPClose (ga_77_socket)
+    EndIf
+  Loop
+#EndIf
+
 EndProg
