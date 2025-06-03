@@ -93,7 +93,7 @@ Const CS320SDI_ADR             = 2           'Unique: SDI address for CS320 (2 a
 #EndIf
 
 '* QUANTUM SENSOR
-Const SENSOR_CS310 As Boolean  = FALSE       'Unique: CS310 Quantum Sensor.
+Const SENSOR_CS310 As Boolean  = TRUE       'Unique: CS310 Quantum Sensor.
 #If (SENSOR_CS310) Then 
 Const QUNTM_MULT As Float      = 100         'Unique: Multiplier [(umolPhoton m-2 s-1) mV-1]. 
 
@@ -646,11 +646,11 @@ Const SN500_SDI_PORT           = C3
 
 #EndIf  
 #If (SENSOR_CS310) Then
-Const QUANTUM_ANALOG_INPUT     = 8
+Const QUANTUM_ANALOG_INPUT     = 1
 '*** Quantum wiring
-' VOLT116 8H                         Quantum signal (white)
-' VOLT116 8L                         Quantum signal reference (black)
-' VOLT116 AG                         Shield (clear)
+' CR1000X 1H                         Quantum signal (white)
+' CR1000X 1L                         Quantum signal reference (black)
+' CR1000X AG                         Shield (clear)
 
 
 #EndIf 
@@ -11046,7 +11046,7 @@ Scan (SLW_SCN_INTV, mSec, 7, 0)
 #If (SENSOR_CS310) Then
 '*****                    CS310 measurements                         ***** 
  'CDM_VoltDiff (MODEL_CDMVLT, CPI_CDM_VOLT, PPFD_IN, 1, mV200, QUANTUM_ANALOG_INPUT, TRUE, 500, NTCH_FRQ_SLW, 1, 0)
- VoltDiff(PPFD_IN,1,mV200, QUANTUM_ANALOG_INPUT, TRUE, 500, NTCH_FRQ_SLW, 1, 0)
+    VoltDiff(PPFD_IN, 1, mV200, QUANTUM_ANALOG_INPUT, TRUE, 500, NTCH_FRQ_SLW, 1, 0)
  If (PPFD_IN <= 0) Then
     PPFD_IN = 0
  Else
