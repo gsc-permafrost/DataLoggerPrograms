@@ -107,22 +107,21 @@ Const CS65SDI_ADR2             = 5           'Unique: SDI address for CS65X #2 (
 
 
 '* SOIL HEAT FLUX PLATE
-Const SENSOR_HFP01 As Boolean  = FALSE       'Unique: HFP01 soil heat flux plates. FALSE as default. If TRUE, SENSOR_HFPSC must be set to FALSE
-Const SENSOR_HFPSC As Boolean  = FALSE       'Unique: HFP01SC self-calibrating soil heat flux plates. FALSE as default. If TRUE, SENSOR_HFP01 must be set to FALSE
-#If (SENSOR_HFP01 OR SENSOR_HFPSC) Then  
+Const SENSOR_HFP01 As Boolean  = FALSE       'Unique: HFP01 soil heat flux plates. FALSE as default.
+#If (SENSOR_HFP01) Then  
 Const NMBR_HFP     As Long     = 2           'Unique: Number of HFP01 or HFP01SC sensors (3 as default, NMBR_CS65X = NMBR_HFP = NMBR_TCAV).
 Const HFP_SNSTVT_1 As Float    = 62.0        'Unique: Sensitivity of HFP01/HFP01SC #1 as reported on sensor product certificate (uV m2 W-1).
 #If (NMBR_HFP > 1) Then 
 Const HFP_SNSTVT_2 As Float    = 62.0        'Unique: Sensitivity of HFP01/HFP01SC #2 as reported on sensor product certificate (uV m2 W-1).
 #EndIf 
 
-#EndIf '(SENSOR_HFP01 OR SENSOR_HFPSC)
+#EndIf '(SENSOR_HFP01)
 EndConstTable
 'End of Constants Customization Section
 
 '* Composite Boolean variables for variables above
 Const SENSOR_Rn               = (SENSOR_SN500)
-Const SENSOR_HFP              = (SENSOR_HFP01 OR SENSOR_HFPSC)
+Const SENSOR_HFP              = (SENSOR_HFP01)
 Const SCAN_INTERVAL_WEIGHT    = SLW_SCN_INTV/(60*1000*OUTPUT_INTV)           'Used to calculate the fraction of day time in an scan interval  
 '************* END OF USER-DEFINED CONFIGURATION CONSTANTS ***************
 
@@ -854,6 +853,7 @@ Public secs_snc_pwr_swtch                          'Seconds since last command (
 Const SYSTEM_PWR_OFF_SET_PT          = 10.5        'System power control threshold in volt. System power off if volt_batt < SYSTEM_PWR_OFF_SET_PT
 Const SYSTEM_PWR_DEAD_BAND_WIDTH     = 1.5         'System power control threshold dead band in volt. System power on if volt_batt > (SYSTEM_PWR_OFF_SET_PT + SYSTEM_PWR_DEAD_BAND_WIDTH)
 Dim   cnt_lwr_pwr_off_set_pt As Long = 0           'Scan count of IRGA power voltage continuously lower than SYSTEM_PWR_OFF_SET_PT.
+Public PowerControl(16) As Boolean = True          'SDMCD16AC control variable
 
 'Recording variables 
 Dim config_type        As String * 16 = NaN        'System configuration
@@ -2654,23 +2654,6 @@ Alias shf_plate_avg(2) = G_plate_1_1_2
 #EndIf 
 Units shf_plate_avg = W m-2
 
-#If (SENSOR_HFPSC) Then
-'*** HFP01SC constants and variables
-Const END_CAL = OUTPUT_INTV - 1          'End HFP01SC insitu calibration one minute before the next output.
-Dim shf_mV(NMBR_HFP)                     'Voltage measured from soil heat flux plates
-Dim shf_mV_run(NMBR_HFP)                 'Running mean of shf_mV
-Dim shf_mV_0(NMBR_HFP)                   'Running mean of shf_mV at the beginning of calibration
-Dim shf_mV_180(NMBR_HFP)                 'Running mean of shf_mV after 180 seconds since the beginning of calibration
-Dim shf_mV_end(NMBR_HFP)                 'Running mean of shf_mV at the end of calibration
-Dim shf_htr_resstnc(NMBR_HFP)            'Array to load heater resistance in ohms
-Dim V_rf(NMBR_HFP)                       'Reference voltage
-Dim V_rf_run(NMBR_HFP)                   'Running mean of reference voltage
-Dim V_rf_180(NMBR_HFP)                   'Running mean of reference voltage after 180 seconds since the beginning of calibration
-Dim shf_mfct_cal(NMBR_HFP)               'Hold manufacture calibrations of self-calibrated soil heat flux plates
-Dim shf_cal_on_f As Boolean              'Set true while calibration is on
-Dim shf_cal_fail_f(NMBR_HFP) As Boolean  'HFP01SC self-calibration warning   
-#EndIf '(SENSOR_HFPSC)
-
 DataTable (stats_SHF, TRUE, 1)
   TableHide
   DataInterval (0, OUTPUT_INTV, Min, 0)
@@ -2678,9 +2661,6 @@ DataTable (stats_SHF, TRUE, 1)
   Average (NMBR_HFP, shf_plate(1), IEEE4, slowsequence_disable_f)
   #EndIf
 
-  #If (SENSOR_HFPSC) Then
-  Average (NMBR_HFP, shf_plate(1), IEEE4, (shf_cal_on_f OR slowsequence_disable_f))
-  #EndIf
 EndTable 'stats_SHF
 '****** END OF HFP01 OR HFP01SC: CONSTANTS, VARIABLES, AND DATATABLE *****
 #EndIf '(SENSOR_HFP)
@@ -5788,14 +5768,6 @@ BeginProg
    shf_plate_cal(2) = 1000/HFP_SNSTVT_2
    #EndIf 
  
-   #If (SENSOR_HFPSC) Then
-   Move (shf_mfct_cal(1), NMBR_HFP, shf_plate_cal(1), NMBR_HFP)    
-  '*** Load heater resistance soil heat flux plate.  
-   shf_htr_resstnc (1) = HFP_OHM_1 
-   #If (NMBR_HFP > 1) Then              
-   shf_htr_resstnc (2) = HFP_OHM_2
-   #EndIf 
-   #EndIf '(SENSOR_HFPSC)
  #EndIf '(SENSOR_HFP)
  
   '*** Reset and start timer  
@@ -6147,9 +6119,6 @@ BeginProg
      
    #If (SENSOR_HFP) Then
      x_tmp = x_tmp + 4*NMBR_HFP  'shfp_cal_1_1_1, _1_1_2, and/or _1_1_3 depending on NMBR_HFP 
-     #If (SENSOR_HFPSC) Then
-     x_tmp = x_tmp + 4*NMBR_HFP  'shfp_cal_fail_1_1_1, _1_1_2, and/or _1_1_3, depending on NMBR_HFP     
-     #EndIf     
    #EndIf 
 
    #If (ONE_FL_TABLE) Then 
@@ -9624,6 +9593,8 @@ SlowSequence
       ga_77_tcip_ip_socket_close_timer = Timer (0,Sec,3)
       TCPClose (ga_77_socket)
     EndIf
+    
+    SDMCD16AC(PowerControl(),1,0)
   Loop
 #EndIf
 EndProg
