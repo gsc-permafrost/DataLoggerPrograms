@@ -9610,7 +9610,9 @@ SlowSequence
         TCPClose (ga_77_socket)
         pwr_ctrl_ethernet = FALSE
       Else
-        pwr_ctrl_ethernet = TRUE
+        If pwr_ctrl_ethernet = FALSE then
+          pwr_ctrl_ethernet = TRUE
+        EndIf
       EndIf
     EndIf  
     EthernetPower(pwr_ctrl_ethernet)
