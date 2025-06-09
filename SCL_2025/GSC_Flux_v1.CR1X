@@ -854,6 +854,7 @@ Const SYSTEM_PWR_OFF_SET_PT          = 12.15        'System power control thresh
 Const SYSTEM_PWR_DEAD_BAND_WIDTH     = 0.5         'System power control threshold dead band in volt. System power on if volt_batt > (SYSTEM_PWR_OFF_SET_PT + SYSTEM_PWR_DEAD_BAND_WIDTH)
 Dim   cnt_lwr_pwr_off_set_pt As Long = 0           'Scan count of IRGA power voltage continuously lower than SYSTEM_PWR_OFF_SET_PT.
 Public pwr_ctrl_sdmcd16ac(16) As Boolean = True          'SDMCD16AC control variable
+Public pwr_ctrl_ethernet as Boolean = True          'Ethernet control variable
 
 'Recording variables 
 Dim config_type        As String * 16 = NaN        'System configuration
@@ -1982,7 +1983,7 @@ Public ga_77_nmbr_bytes_rtrnd As Long
 Dim ga_77_clear_buff_f As Boolean
 Dim ga_77_checksum_f As Boolean
 Dim ga_77_scan_cntr As Long
-Dim ga_77_tcip_ip_socket_close_timer As Long
+Public ga_77_tcip_ip_socket_close_timer As Long
 Dim diag_77_tmp As Long                                      'Temporary variable used to break out the LI-7700 diagnostic bits.
 Dim bad_CH4_rcd                                              'An integer indicating whether a CH4 record is a good (0) or bad one (-1)
 
@@ -9014,9 +9015,9 @@ Scan (SLW_SCN_INTV, mSec, 7, 0)
        
        'Turn off heater when the difference between T and TD is greater than setting threshold 
        #If (SENSOR_T_RH) Then                 
-       If ((T_probe - T_DP_Probe >= SN500_HEATER_T_TD_THRSHLD) OR (V_batt_runng <= 11)) Then  
+       If ((T_probe - T_DP_Probe >= SN500_HEATER_T_TD_THRSHLD) OR (V_batt_runng <= SYSTEM_PWR_OFF_SET_PT)) Then  
        #Else 
-       If ((Tc - T_DP >= SN500_HEATER_T_TD_THRSHLD) OR (V_batt_runng <= 11)) Then               
+       If ((Tc - T_DP >= SN500_HEATER_T_TD_THRSHLD) OR (V_batt_runng <= SYSTEM_PWR_OFF_SET_PT)) Then               
        #EndIf 
           If (sn500_heater_on_f) Then 
           SDI12Recorder(sn500_heater_set_dummy, SN500_SDI_PORT, SN500SDI_ADR, "XHOFF!", 1, 0, -1)
@@ -9026,9 +9027,9 @@ Scan (SLW_SCN_INTV, mSec, 7, 0)
        
        'Turn on heater when the difference between T and TD is smaller than setting threshold 
        #If (SENSOR_T_RH) Then                 
-       If ((T_probe - T_DP_Probe < SN500_HEATER_T_TD_THRSHLD) AND (V_batt_runng > 11.5)) Then  
+       If ((T_probe - T_DP_Probe < SN500_HEATER_T_TD_THRSHLD) AND (V_batt_runng > SYSTEM_PWR_OFF_SET_PT)) Then  
        #Else 
-       If ((Tc - T_DP < SN500_HEATER_T_TD_THRSHLD) AND (V_batt_runng > 11.5)) Then               
+       If ((Tc - T_DP < SN500_HEATER_T_TD_THRSHLD) AND (V_batt_runng > SYSTEM_PWR_OFF_SET_PT)) Then               
        #EndIf  
           If (NOT sn500_heater_on_f) Then 
           SDI12Recorder(sn500_heater_set_dummy, SN500_SDI_PORT, SN500SDI_ADR, "XHON!", 1, 0, -1)
@@ -9590,18 +9591,24 @@ SlowSequence
     Select Case irga_power 
       Case PWR_ON
         Move(pwr_ctrl_sdmcd16ac,2,TRUE,1) 
+        pwr_ctrl_ethernet = TRUE
       Case PWR_OFF
         Move(pwr_ctrl_sdmcd16ac,2,FALSE,1) 
+        pwr_ctrl_ethernet = FALSE
     EndSelect
     If pwr_ctrl_sdmcd16ac(1) = True Then
-      EthernetPower(1) ' Ensure the ethenet is powered on if thye LI7700 is powered on.
+      If (pwr_ctrl_ethernet) Then
+        EthernetPower(pwr_ctrl_ethernet) ' Ensure the ethenet is powered on if the LI7700 is powered on.
+      Else
+        pwr_ctrl_ethernet = True
+      EndIf
       Delay (1,1,Sec)
       ga_77_tcip_ip_socket_close_timer = Timer (0,Sec,4)
       ga_77_socket = TCPOpen (LI7700_IP_ADDR_str,7700,GA_77_SERIAL_BUFF_SIZE)
       If ( ga_77_tcip_ip_socket_close_timer > 80 ) Then 'The default timeout for the TCPOpen is 75 seconds. Close the socket if there's been no data for 80 seconds.
         ga_77_tcip_ip_socket_close_timer = Timer (0,Sec,3)
         TCPClose (ga_77_socket)
-        EthernetPower(0)
+        EthernetPower(pwr_ctrl_ethernet)
       EndIf
     EndIf  
     SDMCD16AC(pwr_ctrl_sdmcd16ac(),1,0)
