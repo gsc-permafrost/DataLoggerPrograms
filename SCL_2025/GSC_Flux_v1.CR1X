@@ -9598,11 +9598,6 @@ SlowSequence
         pwr_ctrl_ethernet = FALSE
     EndSelect
     If pwr_ctrl_sdmcd16ac(1) = True Then
-      If (pwr_ctrl_ethernet) Then
-        EthernetPower(pwr_ctrl_ethernet) ' Ensure the ethenet is powered on if the LI7700 is powered on.
-      Else
-        pwr_ctrl_ethernet = TRUE
-      EndIf
       Delay (1,1,Sec)
       ga_77_tcip_ip_socket_close_timer = Timer (0,Sec,4)
       ga_77_socket = TCPOpen (LI7700_IP_ADDR_str,7700,GA_77_SERIAL_BUFF_SIZE)
@@ -9610,16 +9605,10 @@ SlowSequence
         ga_77_tcip_ip_socket_close_timer = Timer (0,Sec,3)
         TCPClose (ga_77_socket)
         pwr_ctrl_ethernet = FALSE
-        chode_count = 0
-      Else
-        If (pwr_ctrl_ethernet = FALSE) AND (chode_count > 10) then
-          pwr_ctrl_ethernet = TRUE
-        EndIf
       EndIf
     EndIf  
     EthernetPower(pwr_ctrl_ethernet)
     SDMCD16AC(pwr_ctrl_sdmcd16ac(),1,0)
-    chode_count = chode_count + 1
   Loop
 #EndIf
 EndProg
