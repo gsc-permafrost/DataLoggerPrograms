@@ -85,20 +85,20 @@ Const QUNTM_MULT As Float      = 100         'Unique: Multiplier [(umolPhoton m-
 
 Const SENSOR_SN500 As Boolean  = TRUE       'Unique: SN500SS 4-way net radiometer. 
 #If (SENSOR_SN500) Then 
-Const SN500SDI_ADR             = 0           'Unique: SDI address for SN500 (3 as default) 
+Const SN500SDI_ADR             = 0           'Unique: SDI address for SN500
 #EndIf
 
 '* TCAV SOIL TEMPERATURE PROBE
 Const SENSOR_TCAV   As Boolean = FALSE       'Unique: TCAV type E thermocouple averaging soil temperature probes (FALSE as default).
 #If (SENSOR_TCAV)   Then
-Const NMBR_TCAV     As Long    = 2           'Unique: Number of TCAV (3 as default, NMBR_CS65X = NMBR_HFP = NMBR_TCAV).
+Const NMBR_TCAV     As Long    = 2           'Unique: Number of TCAV (2 as default, NMBR_CS65X = NMBR_HFP = NMBR_TCAV).
 #EndIf
 
 
 '* SOIL WATER CONTENT PROBE
 Const SENSOR_CS65X  As Boolean = FALSE       'Unique: CS650 or CS655: water content reflectometers for volumetric soil moisture. FALSE as default. 
 #If (SENSOR_CS65X) Then  
-Const NMBR_CS65X    As Long    = 2           'Unique: Number of CS650, or CS655 sensors (3 as default, NMBR_CS65X = NMBR_HFP = NMBR_TCAV).
+Const NMBR_CS65X    As Long    = 2           'Unique: Number of CS650, or CS655 sensors (2 as default, NMBR_CS65X = NMBR_HFP = NMBR_TCAV).
 Const CS65SDI_ADR1             = 4           'Unique: SDI address for CS65X #1 (4 as default).
 #If (NMBR_CS65X > 1) Then 
 Const CS65SDI_ADR2             = 5           'Unique: SDI address for CS65X #2 (5 as default).
@@ -109,7 +109,7 @@ Const CS65SDI_ADR2             = 5           'Unique: SDI address for CS65X #2 (
 '* SOIL HEAT FLUX PLATE
 Const SENSOR_HFP01 As Boolean  = FALSE       'Unique: HFP01 soil heat flux plates. FALSE as default.
 #If (SENSOR_HFP01) Then  
-Const NMBR_HFP     As Long     = 2           'Unique: Number of HFP01 or HFP01SC sensors (3 as default, NMBR_CS65X = NMBR_HFP = NMBR_TCAV).
+Const NMBR_HFP     As Long     = 2           'Unique: Number of HFP01 or HFP01SC sensors (2 as default, NMBR_CS65X = NMBR_HFP = NMBR_TCAV).
 Const HFP_SNSTVT_1 As Float    = 62.0        'Unique: Sensitivity of HFP01/HFP01SC #1 as reported on sensor product certificate (uV m2 W-1).
 #If (NMBR_HFP > 1) Then 
 Const HFP_SNSTVT_2 As Float    = 62.0        'Unique: Sensitivity of HFP01/HFP01SC #2 as reported on sensor product certificate (uV m2 W-1).
@@ -853,7 +853,7 @@ Public secs_snc_pwr_swtch                          'Seconds since last command (
 Const SYSTEM_PWR_OFF_SET_PT          = 10.5        'System power control threshold in volt. System power off if volt_batt < SYSTEM_PWR_OFF_SET_PT
 Const SYSTEM_PWR_DEAD_BAND_WIDTH     = 1.5         'System power control threshold dead band in volt. System power on if volt_batt > (SYSTEM_PWR_OFF_SET_PT + SYSTEM_PWR_DEAD_BAND_WIDTH)
 Dim   cnt_lwr_pwr_off_set_pt As Long = 0           'Scan count of IRGA power voltage continuously lower than SYSTEM_PWR_OFF_SET_PT.
-Public PowerControl(16) As Boolean = True          'SDMCD16AC control variable
+Public pwr_ctrl_sdmcd16ac(16) As Boolean = True          'SDMCD16AC control variable
 
 'Recording variables 
 Dim config_type        As String * 16 = NaN        'System configuration
@@ -9586,15 +9586,25 @@ NextScan 'SLW_SCN_INTV
 SlowSequence
 
   Do
-    Delay (1,1,Sec)
-    ga_77_tcip_ip_socket_close_timer = Timer (0,Sec,4)
-    ga_77_socket = TCPOpen (LI7700_IP_ADDR_str,7700,GA_77_SERIAL_BUFF_SIZE)
-    If ( ga_77_tcip_ip_socket_close_timer > 80 ) Then 'The default timeout for the TCPOpen is 75 seconds. Close the socket if there's been no data for 80 seconds.
-      ga_77_tcip_ip_socket_close_timer = Timer (0,Sec,3)
-      TCPClose (ga_77_socket)
-    EndIf
-    
-    SDMCD16AC(PowerControl(),1,0)
+      
+    Select Case irga_power 
+      Case PWR_ON
+        Move(pwr_ctrl_sdmcd16ac,2,TRUE,1) 
+      Case PWR_OFF
+        Move(pwr_ctrl_sdmcd16ac,2,FALSE,1) 
+    EndSelect
+    If pwr_ctrl_sdmcd16ac(1) = True Then
+      EthernetPower(1) ' Ensure the ethenet is powered on if thye LI7700 is powered on.
+      Delay (1,1,Sec)
+      ga_77_tcip_ip_socket_close_timer = Timer (0,Sec,4)
+      ga_77_socket = TCPOpen (LI7700_IP_ADDR_str,7700,GA_77_SERIAL_BUFF_SIZE)
+      If ( ga_77_tcip_ip_socket_close_timer > 80 ) Then 'The default timeout for the TCPOpen is 75 seconds. Close the socket if there's been no data for 80 seconds.
+        ga_77_tcip_ip_socket_close_timer = Timer (0,Sec,3)
+        TCPClose (ga_77_socket)
+        EthernetPower(0)
+      EndIf
+    EndIf  
+    SDMCD16AC(pwr_ctrl_sdmcd16ac(),1,0)
   Loop
 #EndIf
 EndProg
