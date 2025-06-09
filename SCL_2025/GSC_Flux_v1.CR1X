@@ -1978,7 +1978,7 @@ Const ce23 = 9.27e-1
 Dim ga_77_tmp(10)                                            'Temporary variable to hold incoming data from LI-7700.
 Dim ga_77_socket As Long
 Dim ga_77_in_bytes_str As String * GA_77_NMBR_BYTES_EXPCTD
-Dim ga_77_nmbr_bytes_rtrnd As Long
+Public ga_77_nmbr_bytes_rtrnd As Long
 Dim ga_77_clear_buff_f As Boolean
 Dim ga_77_checksum_f As Boolean
 Dim ga_77_scan_cntr As Long
