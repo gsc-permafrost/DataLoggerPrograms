@@ -650,7 +650,7 @@ Units buff_depth = scans
 '*** Datalogger temperature and voltage 
 Public T_panel: Units T_panel = deg C         'Datalogger panel temperature
 Public V_batt : Units V_batt  = V             'Voltage of power connected to datalogger
-Dim    V_batt_runng                           'Running average of V_batt
+Public    V_batt_runng                           'Running average of V_batt
 
 '************* END OF DATALOGGER SELF-MEASUREMENT VARIABLES **************
 
