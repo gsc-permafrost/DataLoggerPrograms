@@ -855,7 +855,6 @@ Const SYSTEM_PWR_DEAD_BAND_WIDTH     = 0.5         'System power control thresho
 Dim   cnt_lwr_pwr_off_set_pt As Long = 0           'Scan count of IRGA power voltage continuously lower than SYSTEM_PWR_OFF_SET_PT.
 Public pwr_ctrl_sdmcd16ac(16) As Boolean = True          'SDMCD16AC control variable
 Public pwr_ctrl_ethernet as Boolean = True          'Ethernet control variable
-Public chode_count = 0
 
 'Recording variables 
 Dim config_type        As String * 16 = NaN        'System configuration
@@ -9185,6 +9184,8 @@ Scan (SLW_SCN_INTV, mSec, 7, 0)
    irga_pwr_array(1, 2)   = PWR_OFF    'Turn IRGA off.
    irga_pwr_array(2, 2)   = H_OFF      'Turn heater off.
    cnt_lwr_pwr_off_set_pt = 0
+   
+   Move(pwr_ctrl_sdmcd16ac,2,TRUE,1)    'Turn off 7700
 
    prev_value_str = "Batt volt >" & SYSTEM_PWR_OFF_SET_PT & " V"
    curr_value_str = "Batt volt =" & V_batt_runng & " V"
@@ -9196,6 +9197,8 @@ Scan (SLW_SCN_INTV, mSec, 7, 0)
    irga_pwr_switch_f    = TRUE
    irga_pwr_array(1, 2) = PWR_ON       'Turn IRGA on.
    irga_pwr_array(2, 2) = heater_user  'Turn heater on.
+
+   Move(pwr_ctrl_sdmcd16ac,2,TRUE,1)    'Turn on 7700
 
    prev_value_str = "Batt volt <" & SYSTEM_PWR_OFF_SET_PT & " V"
    curr_value_str = "Batt volt =" & V_batt_runng & " V"
@@ -9586,22 +9589,12 @@ NextScan 'SLW_SCN_INTV
 
 #If (SENSOR_LI7700) Then 
 SlowSequence
-
-  Do
-      
-    Select Case irga_power 
-      Case PWR_ON
-        Move(pwr_ctrl_sdmcd16ac,2,TRUE,1) 
-        pwr_ctrl_ethernet = TRUE
-      Case PWR_OFF
-        Move(pwr_ctrl_sdmcd16ac,2,FALSE,1) 
-        pwr_ctrl_ethernet = FALSE
-    EndSelect
+  Do     
     If pwr_ctrl_sdmcd16ac(1) = True Then
       Delay (1,1,Sec)
       ga_77_tcip_ip_socket_close_timer = Timer (0,Sec,4)
       ga_77_socket = TCPOpen (LI7700_IP_ADDR_str,7700,GA_77_SERIAL_BUFF_SIZE)
-      If ( ga_77_tcip_ip_socket_close_timer > 80 ) Then 'The default timeout for the TCPOpen is 75 seconds. Close the socket if there's been no data for 80 seconds.
+      If ( ga_77_tcip_ip_socket_close_timer > 80 ) Then 'The default timeout for the TCPOpen is 75 seconds. Close the socket if there's been no data for 80 seconds.git
         ga_77_tcip_ip_socket_close_timer = Timer (0,Sec,3)
         TCPClose (ga_77_socket)
         pwr_ctrl_ethernet = FALSE
@@ -9609,6 +9602,7 @@ SlowSequence
     EndIf  
     EthernetPower(pwr_ctrl_ethernet)
     SDMCD16AC(pwr_ctrl_sdmcd16ac(),1,0)
+    pwr_ctrl_ethernet = TRUE
   Loop
 #EndIf
 EndProg
