@@ -9600,7 +9600,7 @@ SlowSequence
       If (pwr_ctrl_ethernet) Then
         EthernetPower(pwr_ctrl_ethernet) ' Ensure the ethenet is powered on if the LI7700 is powered on.
       Else
-        pwr_ctrl_ethernet = True
+        pwr_ctrl_ethernet = TRUE
       EndIf
       Delay (1,1,Sec)
       ga_77_tcip_ip_socket_close_timer = Timer (0,Sec,4)
@@ -9608,9 +9608,12 @@ SlowSequence
       If ( ga_77_tcip_ip_socket_close_timer > 80 ) Then 'The default timeout for the TCPOpen is 75 seconds. Close the socket if there's been no data for 80 seconds.
         ga_77_tcip_ip_socket_close_timer = Timer (0,Sec,3)
         TCPClose (ga_77_socket)
-        EthernetPower(pwr_ctrl_ethernet)
+        pwr_ctrl_ethernet = FALSE
+      Else
+        pwr_ctrl_ethernet = TRUE
       EndIf
     EndIf  
+    EthernetPower(pwr_ctrl_ethernet)
     SDMCD16AC(pwr_ctrl_sdmcd16ac(),1,0)
   Loop
 #EndIf
