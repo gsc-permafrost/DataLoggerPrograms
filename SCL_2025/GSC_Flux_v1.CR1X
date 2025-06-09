@@ -9185,7 +9185,7 @@ Scan (SLW_SCN_INTV, mSec, 7, 0)
    irga_pwr_array(2, 2)   = H_OFF      'Turn heater off.
    cnt_lwr_pwr_off_set_pt = 0
    
-   Move(pwr_ctrl_sdmcd16ac,2,TRUE,1)    'Turn off 7700
+   Move(pwr_ctrl_sdmcd16ac,2,FALSE,1)    'Turn off 7700
 
    prev_value_str = "Batt volt >" & SYSTEM_PWR_OFF_SET_PT & " V"
    curr_value_str = "Batt volt =" & V_batt_runng & " V"
