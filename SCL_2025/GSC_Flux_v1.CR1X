@@ -850,7 +850,7 @@ Dim    irga_startup_bit      As Long               'From diag code
 Public secs_snc_pwr_swtch                          'Seconds since last command (or action)
 
 'Power control constants and variable.
-Const SYSTEM_PWR_OFF_SET_PT          = 12.0        'System power control threshold in volt. System power off if volt_batt < SYSTEM_PWR_OFF_SET_PT
+Const SYSTEM_PWR_OFF_SET_PT          = 12.15        'System power control threshold in volt. System power off if volt_batt < SYSTEM_PWR_OFF_SET_PT
 Const SYSTEM_PWR_DEAD_BAND_WIDTH     = 0.5         'System power control threshold dead band in volt. System power on if volt_batt > (SYSTEM_PWR_OFF_SET_PT + SYSTEM_PWR_DEAD_BAND_WIDTH)
 Dim   cnt_lwr_pwr_off_set_pt As Long = 0           'Scan count of IRGA power voltage continuously lower than SYSTEM_PWR_OFF_SET_PT.
 Public pwr_ctrl_sdmcd16ac(16) As Boolean = True          'SDMCD16AC control variable
