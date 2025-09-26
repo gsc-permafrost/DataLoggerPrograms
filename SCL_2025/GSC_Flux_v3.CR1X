@@ -1,5 +1,7 @@
 ' Adapted by June Skeeter for use at Swiss Cheese Lake EC station.
-' Main Changes: Reduced number of sensors and parsed down code for readability.
+' Main Changes:  * Reduced number of sensors and parsed down code for readability.
+'                * Set to stop memeory
+'                * Disabled LI-7700 for winter
 
 ' ###################################################################################### To DO: Add ethernet reset switch  #############################################################
 
@@ -60,7 +62,7 @@ Const UTC_OFST                 = 0          'Unique: The local standard time, in
 
 
 '* CH4 GAS ANALYZER
-Const SENSOR_LI7700 As Boolean = TRUE        'Unique: LI-7700 open path CH4 gas analyzer (FALSE as default).
+Const SENSOR_LI7700 As Boolean = False        'Unique: LI-7700 open path CH4 gas analyzer (FALSE as default).
 
 '* TEMP/RH PROBE
 Const SENSOR_T_RH As Boolean   = TRUE       'Unique: HMP155A or other model T-RH probe: temperature and relative humidity probe (FALSE as Default).
@@ -855,8 +857,12 @@ Public secs_snc_pwr_swtch                          'Seconds since last command (
 Const SYSTEM_PWR_OFF_SET_PT          = 12.1        'System power control threshold in volt. System power off if volt_batt < SYSTEM_PWR_OFF_SET_PT
 Const SYSTEM_PWR_DEAD_BAND_WIDTH     = 0.65        'System power control threshold dead band in volt. System power on if volt_batt > (SYSTEM_PWR_OFF_SET_PT + SYSTEM_PWR_DEAD_BAND_WIDTH)
 Dim   cnt_lwr_pwr_off_set_pt As Long = 0           'Scan count of IRGA power voltage continuously lower than SYSTEM_PWR_OFF_SET_PT.
-Public pwr_ctrl_sdmcd16ac(16) As Boolean = True          'SDMCD16AC control variable
-Public pwr_ctrl_ethernet as Boolean = True          'Ethernet control variable
+
+' Power controls for LI7700 if it is enabled
+#If (SENSOR_LI7700) Then 
+  Public pwr_ctrl_sdmcd16ac(16) As Boolean = True          'SDMCD16AC control variable
+  Public pwr_ctrl_ethernet As Boolean = True          'Ethernet control variable
+#EndIf
 
 'Recording variables 
 Dim config_type        As String * 16 = NaN        'System configuration
@@ -9193,8 +9199,9 @@ Scan (SLW_SCN_INTV, mSec, 7, 0)
    irga_pwr_array(2, 2)   = H_OFF      'Turn heater off.
    cnt_lwr_pwr_off_set_pt = 0
    
-   Move(pwr_ctrl_sdmcd16ac,2,FALSE,1)    'Turn off 7700
-
+   #If (SENSOR_LI7700) Then
+     Move(pwr_ctrl_sdmcd16ac,2,FALSE,1)    'Turn off 7700
+   #EndIf
    prev_value_str = "Batt volt >" & SYSTEM_PWR_OFF_SET_PT & " V"
    curr_value_str = "Batt volt =" & V_batt_runng & " V"
    message        = "IRGA auto-off: low volt."
@@ -9206,7 +9213,9 @@ Scan (SLW_SCN_INTV, mSec, 7, 0)
    irga_pwr_array(1, 2) = PWR_ON       'Turn IRGA on.
    irga_pwr_array(2, 2) = heater_user  'Turn heater on.
 
-   Move(pwr_ctrl_sdmcd16ac,2,TRUE,1)    'Turn on 7700
+   #If (SENSOR_LI7700) Then
+     Move(pwr_ctrl_sdmcd16ac,2,TRUE,1)    'Turn on 7700
+   #EndIf
 
    prev_value_str = "Batt volt <" & SYSTEM_PWR_OFF_SET_PT & " V"
    curr_value_str = "Batt volt =" & V_batt_runng & " V"
